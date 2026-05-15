@@ -5,3 +5,5 @@ __pycache__/
 mlruns/
 model/*.pkl
 *.DS_Store
+mlflow.db
+inicial.ipynb
