@@ -1,9 +1,12 @@
 services:
   api:
-    build: .
+    image: mcdataxdev/edurisk-api:latest
     ports:
       - "5000:5000"
     env_file:
       - .env
-    volumes:
-      - ./model:/app/model
+
+  mlflow:
+    image: mcdataxdev/edurisk-mlflow:latest
+    ports:
+      - "5001:5001"
