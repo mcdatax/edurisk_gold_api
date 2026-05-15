@@ -1,12 +1,19 @@
 services:
   api:
     image: mcdataxdev/edurisk-api:latest
-    ports:
-      - "5000:5000"
+    expose:
+      - "5000"
     env_file:
       - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  mlflow:
-    image: mcdataxdev/edurisk-mlflow:latest
+  nginx:
+    image: mcdataxdev/edurisk-nginx:latest
     ports:
-      - "5001:5001"
+      - "80:80"
+    depends_on:
+      - api
