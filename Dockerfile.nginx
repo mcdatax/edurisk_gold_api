@@ -1,2 +1,2 @@
-FROM nginx:alpine
-COPY nginx/nginx.conf /etc/nginx/nginx.conf
+FROM nginx:alpine # nginx:alpine es la imagen de nginx más pequeña, prefabricada por el equipo de nginx
+COPY nginx/nginx.conf /etc/nginx/nginx.conf # Copia el archivo de configuración de nginx a la imagen
