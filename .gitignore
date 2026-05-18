@@ -7,3 +7,4 @@ model/*.pkl
 *.DS_Store
 mlflow.db
 inicial.ipynb
+CLAUDE.md

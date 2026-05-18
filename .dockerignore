@@ -1,0 +1,56 @@
+# Equivalente a .gitignore pero para builds Docker.
+# Reduce el contexto que se envía al daemon → builds más rápidos e imagen más ligera.
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv
+venv
+env
+.mypy_cache
+.pytest_cache
+.ruff_cache
+
+# IDE / editor
+.vscode
+.idea
+*.swp
+.DS_Store
+
+# Notebooks / scratch
+*.ipynb
+.ipynb_checkpoints
+inicial.ipynb
+
+# Docs y meta (no necesarios en runtime)
+README.md
+CLAUDE.md
+docs
+
+# Secretos: nunca dentro de la imagen — se inyectan con --env-file o -e.
+.env
+.env.*
+
+# Docker meta
+Dockerfile
+Dockerfile.*
+docker-compose*.yml
+.dockerignore
+
+# Tests (no van en imagen de producción)
+tests
+
+# Artefactos MLflow (no aplican en este repo)
+mlruns
+mlflow.db
+
+# NOTA: model/final_model.pkl SÍ entra (no se excluye).
+# El modelo es parte de la imagen — la API no funciona sin él.

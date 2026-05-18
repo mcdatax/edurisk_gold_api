@@ -1,2 +1,6 @@
-FROM nginx:alpine # nginx:alpine es la imagen de nginx más pequeña, prefabricada por el equipo de nginx
-COPY nginx/nginx.conf /etc/nginx/nginx.conf # Copia el archivo de configuración de nginx a la imagen
+# nginx:alpine es la imagen oficial de Nginx más pequeña (~8 MB), basada en Alpine Linux.
+FROM nginx:alpine
+
+# Sobreescribe la configuración por defecto con la nuestra (reverse proxy + rate limiting).
+# nginx:alpine ya tiene EXPOSE 80 y CMD ["nginx", "-g", "daemon off;"] heredados.
+COPY nginx/nginx.conf /etc/nginx/nginx.conf

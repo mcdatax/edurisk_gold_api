@@ -1,28 +1,35 @@
-# Es la imagen de python más pequeña, prefabricada por el equipo de python
-FROM python:3.11-slim 
+# Imagen base oficial de Python en variante slim (~130 MB).
+# Tag fijo (3.11) en vez de 'latest' garantiza builds reproducibles.
+FROM python:3.11-slim
 
-# WORKDIR es el directorio de trabajo, en este caso el directorio de la aplicación
-WORKDIR /app 
+# Directorio de trabajo dentro del contenedor.
+WORKDIR /app
 
-COPY requirements.txt . # Copia el archivo de requirements.txt a la imagen
+# Copia solo requirements.txt primero para aprovechar la caché de capas Docker:
+# mientras no cambie este archivo, Docker reutiliza la capa del pip install
+# y los builds tardan segundos en vez de minutos.
+COPY requirements.txt .
 
-# Instala las dependencias del archivo requirements.txt
-# --no-cache-dir es un argumento para no cachear las dependencias instaladas en la 
-# imagen para evitar errores de dependencias conflictivas al hacer el build de la imagen 
-# y no tener que descargar las dependencias cada vez que se hace el build de la imagen
-RUN pip install --no-cache-dir -r requirements.txt 
+# --no-cache-dir evita guardar la caché de pip dentro de la imagen → imagen más ligera.
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia el contenido del directorio actual a la imagen
-COPY . . 
+# Ahora el resto del código (esta capa sí cambia con cada commit).
+COPY . .
 
-# Exponemos el puerto 5000 para que la aplicación pueda ser accesible desde el exterior
-EXPOSE 5000 
+# Usuario no-root: si la app se ve comprometida, el atacante no tiene root dentro del contenedor.
+RUN useradd --create-home --shell /bin/bash appuser && \
+    chown -R appuser:appuser /app
+USER appuser
 
-# Gunicorn es un servidor WSGI que se encarga de ejecutar la aplicación Flask
-CMD [
-    "gunicorn", # Comando para ejecutar gunicorn
-    "--bind", # Argumento para especificar la dirección IP de escucha
-    "0.0.0.0:5000", # Dirección de escucha (cualquier dirección IP)
-    "--workers", # Argumento para especificar el número de workers
-    "2", # Número de workers (2 workers es el mínimo recomendado)
-    "run:app"] # Nombre del archivo de la aplicación (run.py)
+# Documenta el puerto interno. Nginx lo consumirá por red Docker, NO se expone al exterior.
+EXPOSE 5000
+
+# Gunicorn como servidor WSGI de producción.
+# --workers 1 + --threads 4: en t3.small (2 GB RAM) un worker con sklearn cargado
+#   ya consume ~500 MB. Varios workers provocan OOM y SSH letra-por-letra.
+# --preload: el master carga la app y el modelo UNA vez antes de forkear workers.
+#   Si en futuro subes a t3.medium con más workers, comparten memoria vía
+#   copy-on-write en Linux (no duplica el modelo en RAM).
+# --timeout 60: margen amplio para predicciones sklearn (en realidad son ms).
+# --access-logfile -: logs de acceso a stdout para que 'docker logs' los muestre.
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "4", "--timeout", "60", "--preload", "--access-logfile", "-", "run:app"]
