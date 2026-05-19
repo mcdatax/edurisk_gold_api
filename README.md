@@ -459,13 +459,13 @@ Copia `.env.example` a `.env` y ajusta los valores:
 
 ## ⚡ Despliegue automático con User Data
 
-La forma más rápida de desplegar — sin conectarte por SSH. Al crear la instancia EC2, pega el script en **Advanced Details → User Data** y en ~4 minutos la API estará disponible.
+La forma más rápida de desplegar, sin conectarte por SSH. Al crear la instancia EC2, pega el script en **Advanced Details -> User Data** y en ~4 minutos la API estará disponible.
 
-> **Qué es User Data:** AWS ejecuta este script como root una sola vez al arrancar la instancia por primera vez. Instala Docker, descarga las imágenes y configura el arranque automático — todo sin intervención manual. Es el primer paso hacia Infrastructure as Code.
+> **Qué es User Data:** AWS ejecuta este script como root una sola vez al arrancar la instancia por primera vez. Instala Docker, descarga las imágenes y configura el arranque automático. Todo sin intervención humana. Es el primer paso hacia Infrastructure as Code (**Terraform**).
 
-### Cómo usarlo
+### ¿Cómo usarlo?
 
-**1.** En AWS Console → EC2 → Launch instance, configura la instancia normalmente (Ubuntu 24.04, t3.medium, puertos 22 y 80).
+**1.** En AWS Console -> EC2 -> Launch instance, configura la instancia normalmente (Ubuntu 24.04, t3.medium, puertos 22 y 80). recuerda abrir el puerto 80 en Security Group para que NGINX funcione.
 
 **2.** Antes de lanzar, despliega **Advanced Details** al final de la página y pega el script en el campo **User data**.
 
@@ -475,7 +475,7 @@ La forma más rápida de desplegar — sin conectarte por SSH. Al crear la insta
 curl http://<IP_PUBLICA>/health
 ```
 
-**4.** Si algo falla, conéctate por SSH y revisa el log:
+**4.** Si algo falla, conéctate por SSH y revisa el log (pero lo he probado y no hace falta):
 
 ```bash
 cat /var/log/edurisk-setup.log
@@ -492,7 +492,7 @@ cat /var/log/edurisk-setup.log
 set -e  # Para si cualquier comando falla
 exec > /var/log/edurisk-setup.log 2>&1  # Guarda output para debugging
 
-echo "=== Iniciando setup EduRisk API ==MCDATAX==="
+echo "=== Iniciando setup EduRisk API ==MCDATAX=="
 
 # 1. Actualizar sistema
 apt-get update -y
