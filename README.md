@@ -3,7 +3,7 @@
 <div align="center">
 
 **REST API para predicción de riesgo de abandono universitario**  
-*Flask · Gunicorn · Nginx · Docker · AWS EC2*
+*Productivización de un modelo ML — del notebook a producción real*
 
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Flask](https://img.shields.io/badge/Flask-3.1-000000?style=for-the-badge&logo=flask&logoColor=white)](https://flask.palletsprojects.com)
@@ -12,8 +12,6 @@
 [![Docker](https://img.shields.io/badge/Docker-29.1-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://docker.com)
 [![AWS EC2](https://img.shields.io/badge/AWS-EC2-FF9900?style=for-the-badge&logo=amazonaws&logoColor=white)](https://aws.amazon.com/ec2)
 [![scikit-learn](https://img.shields.io/badge/scikit--learn-1.8-F7931E?style=for-the-badge&logo=scikit-learn&logoColor=white)](https://scikit-learn.org)
-
-**🟢 API en producción: `http://16.170.110.117/health`**
 
 </div>
 
@@ -24,10 +22,11 @@
 - [El proyecto](#-el-proyecto)
 - [Arquitectura](#-arquitectura)
 - [Endpoints](#-endpoints-de-la-api)
+- [Batch predictions](#-batch-predictions)
 - [Ejecución en local](#-ejecución-en-local)
 - [Despliegue con Docker](#-despliegue-con-docker)
-- [Ejemplos de peticiones](#-ejemplos-de-peticiones)
-- [Estructura](#️-estructura-del-proyecto)
+- [Actualizar la API](#-actualizar-la-api-tras-cambios)
+- [Estructura del proyecto](#️-estructura-del-proyecto)
 - [Stack técnico](#-stack-técnico)
 - [Equipo](#-equipo)
 
@@ -35,73 +34,105 @@
 
 ## 🎯 El proyecto
 
-**EduRisk API** es la productivización del proyecto [EduRisk](https://github.com/mcdatax/edurisk) — sistema de predicción temprana de abandono universitario.
+**EduRisk API** es la productivización de [EduRisk](https://github.com/mcdatax/edurisk) — un sistema de Machine Learning para predicción temprana de abandono universitario.
 
-El modelo predice el riesgo **el día de la matrícula**, con solo datos administrativos disponibles en ese momento.
+El modelo predice el riesgo de abandono **el día de la matrícula**, usando únicamente datos administrativos disponibles en ese momento — sin notas de semestres, sin información académica posterior. Esto permite que tutores intervengan antes de que sea tarde.
 
-| Métrica | Valor |
-|---|---|
-| **Recall Dropout** | **0.6479** ← métrica principal |
-| F1-weighted | 0.5973 |
-| ROC-AUC macro | 0.7558 |
-| Algoritmo | RandomForestClassifier |
+**Clases de predicción:** `Dropout` · `Enrolled` · `Graduate`
+
+| Métrica | Valor | Justificación |
+|---|---|---|
+| **Recall Dropout** | **0.6479** | Métrica principal — un falso negativo (no detectar un abandono) tiene mayor coste que una intervención innecesaria |
+| F1-weighted | 0.5973 | Equilibrio entre precisión y recall en las 3 clases |
+| ROC-AUC macro | 0.7558 | Capacidad discriminativa global del modelo |
+| Algoritmo | RandomForestClassifier | Mejor balance rendimiento/interpretabilidad en validación |
+
+> **Modelo base:** [EduRisk](https://github.com/mcdatax/edurisk) — dataset UCI ML Repository #697 (Realinho et al., 2022)
 
 ---
 
 ## 🏗️ Arquitectura
 
+El sistema sigue una arquitectura de producción en capas con separación de responsabilidades:
+
 ```
 Internet
     │
     ▼
-┌─────────────────────┐
-│   Nginx (puerto 80) │  ← Reverse proxy + Rate limiting (10r/m)
-└────────┬────────────┘
-         │ proxy_pass interno
-         ▼
-┌─────────────────────┐
-│ Gunicorn (p. 5000)  │  ← WSGI producción · 2 workers
-└────────┬────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│    Flask App        │  ← Rutas + validación + logging
-└────────┬────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│ RandomForest        │  ← Pipeline sklearn + DataProcessor
-└─────────────────────┘
+┌───────────────────────────────┐
+│  Nginx (puerto 80 — público)  │  ← Reverse proxy
+│  Rate limiting: 10 req/min    │     Solo puerto expuesto al mundo
+└──────────────┬────────────────┘
+               │ proxy_pass interno — puerto 5000 nunca expuesto
+               ▼
+┌───────────────────────────────┐
+│  Gunicorn (puerto 5000)       │  ← Servidor WSGI de producción
+│  2 workers síncronos          │     Reemplaza el servidor de desarrollo de Flask
+└──────────────┬────────────────┘
+               │
+               ▼
+┌───────────────────────────────┐
+│  Flask App                    │  ← Lógica de negocio
+│  Blueprints · Schemas         │     Arquitectura en capas (rutas / validación / negocio)
+└──────────────┬────────────────┘
+               │
+               ▼
+┌───────────────────────────────┐
+│  DataProcessor + Pipeline     │  ← Feature engineering + modelo
+│  RandomForestClassifier       │     sklearn Pipeline con ColumnTransformer
+└───────────────────────────────┘
 ```
 
+**Infraestructura:**
+
 ```
-Mac ──docker buildx──▶ DockerHub (mcdataxdev)
-                              │
-                         docker pull
-                              ▼
-                    AWS EC2 t3.medium · Ubuntu 24.04
-                    ┌──────────────────────────┐
-                    │ edurisk-nginx  → :80 pub  │
-                    │ edurisk-api   → :5000 int │
-                    │ red: edurisk-net          │
-                    └──────────────────────────┘
+Mac local
+  └── docker buildx ──▶ DockerHub (mcdataxdev)
+                               │
+                          docker pull
+                               ▼
+                     AWS EC2 t3.medium · Ubuntu 24.04 LTS
+                     ┌─────────────────────────────────┐
+                     │  edurisk-nginx  → :80  (público) │
+                     │  edurisk-api   → :5000 (interno) │
+                     │  red Docker: edurisk-net          │
+                     │  auto-restart: systemd service    │
+                     └─────────────────────────────────┘
 ```
+
+**Por qué dos contenedores:**
+- `edurisk-api` — Python + Flask + Gunicorn + modelo ML (~500 MB)
+- `edurisk-nginx` — nginx:alpine + configuración (~8 MB)
+
+Separar responsabilidades permite actualizar la API sin tocar Nginx y viceversa.
 
 ---
 
 ## 🔌 Endpoints de la API
 
-**Base URL:** `http://16.170.110.117`
+| Método | Ruta | Tipo de parámetro | Descripción |
+|---|---|---|---|
+| GET | `/health` | — | Estado del servicio |
+| GET | `/student/<id>` | Path param | Datos de un estudiante por ID |
+| GET | `/predict` | Query params | Predicción rápida via URL |
+| POST | `/predict` | JSON body | Predicción completa — endpoint principal |
+| POST | `/predict/batch` | Form-data (CSV) | Predicción masiva — miles de estudiantes |
+
+---
 
 ### `GET /health`
+
+Comprueba que el servicio está activo y el modelo cargado.
+
 ```bash
-curl http://16.170.110.117/health
+curl http://<IP>/health
 ```
+
 ```json
 {
   "model": "EduRisk RandomForest",
   "status": "ok",
-  "timestamp": "2026-05-15T14:56:37.677012+00:00",
+  "timestamp": "2026-05-19T10:00:00.000000+00:00",
   "version": "1.0.0"
 }
 ```
@@ -109,38 +140,63 @@ curl http://16.170.110.117/health
 ---
 
 ### `GET /student/<student_id>`
+
+Devuelve datos de un estudiante simulado por ID (path param). En producción real consultaría una base de datos.
+
 ```bash
-curl http://16.170.110.117/student/42
+curl http://<IP>/student/42
 ```
+
 ```json
 {
   "student_id": 42,
   "age": 21,
   "gender": 1,
   "scholarship": 0,
-  "tuition": 1
+  "tuition": 1,
+  "debtor": 0,
+  "course": 9254,
+  "admission_grade": 127.3
 }
 ```
 
 ---
 
 ### `POST /predict`
+
+Endpoint principal. Acepta los datos de un estudiante en JSON y devuelve la predicción con probabilidades y nivel de riesgo.
+
 ```bash
-curl -X POST http://16.170.110.117/predict \
+curl -X POST http://<IP>/predict \
   -H "Content-Type: application/json" \
   -d '{
-    "marital": 1, "app_mode": 1, "app_order": 1,
-    "course": 9254, "attendance": 1, "prev_qual": 1,
-    "prev_grade": 122.0, "nationality": 1,
-    "mother_qual": 19, "father_qual": 12,
-    "mother_occ": 5, "father_occ": 9,
-    "admission_grade": 127.3, "displaced": 0,
-    "special_needs": 0, "debtor": 0, "tuition": 1,
-    "gender": 1, "scholarship": 0, "age": 20,
-    "international": 0, "unemployment": 10.8,
-    "inflation": 1.4, "gdp": 1.74
+    "marital": 1,
+    "app_mode": 1,
+    "app_order": 1,
+    "course": 9254,
+    "attendance": 1,
+    "prev_qual": 1,
+    "prev_grade": 122.0,
+    "nationality": 1,
+    "mother_qual": 19,
+    "father_qual": 12,
+    "mother_occ": 5,
+    "father_occ": 9,
+    "admission_grade": 127.3,
+    "displaced": 0,
+    "special_needs": 0,
+    "debtor": 0,
+    "tuition": 1,
+    "gender": 1,
+    "scholarship": 0,
+    "age": 20,
+    "international": 0,
+    "unemployment": 10.8,
+    "inflation": 1.4,
+    "gdp": 1.74
   }'
 ```
+
 ```json
 {
   "prediction": "Enrolled",
@@ -155,16 +211,54 @@ curl -X POST http://16.170.110.117/predict \
 
 | Campo | Descripción |
 |---|---|
-| `prediction` | `Dropout` · `Enrolled` · `Graduate` |
-| `probabilities` | Probabilidad por clase (suman 1.0) |
-| `risk_level` | `Bajo` (<35%) · `Medio` (35-60%) · `Alto` (>60%) |
+| `prediction` | Clase predicha: `Dropout`, `Enrolled` o `Graduate` |
+| `probabilities` | Probabilidad para cada clase (suman 1.0) |
+| `risk_level` | `Bajo` (P(Dropout) < 35%) · `Medio` (35-60%) · `Alto` (> 60%) |
 
 ---
 
 ### `GET /predict`
-Mismas features como query params:
+
+Predicción vía query params — útil para pruebas rápidas desde el navegador.
+
 ```bash
-curl "http://16.170.110.117/predict?age=20&tuition=1&debtor=0&..."
+curl "http://<IP>/predict?marital=1&app_mode=1&app_order=1&course=9254&attendance=1&prev_qual=1&prev_grade=122.0&nationality=1&mother_qual=19&father_qual=12&mother_occ=5&father_occ=9&admission_grade=127.3&displaced=0&special_needs=0&debtor=0&tuition=1&gender=1&scholarship=0&age=20&international=0&unemployment=10.8&inflation=1.4&gdp=1.74"
+```
+
+---
+
+## 📦 Batch predictions
+
+El endpoint `/predict/batch` acepta un CSV con cualquier número de estudiantes y devuelve todas las predicciones.
+
+**Rendimiento:** 8.000 predicciones en ~1.45 segundos gracias a vectorización — `predict_proba()` recibe el DataFrame completo y numpy lo procesa en C compilado.
+
+**Formatos de CSV aceptados:**
+- Columnas UCI completas (`Marital Status`, `Age at enrollment`...)
+- Columnas cortas de la API (`marital`, `age`...)
+
+El endpoint detecta el formato automáticamente con `detect_csv_type()`.
+
+**En Postman:**
+- Method: `POST`
+- URL: `http://<IP>/predict/batch`
+- Body: `form-data` → key `file` (tipo `File`) → selecciona el CSV
+
+**Respuesta:**
+
+```json
+{
+  "total": 8000,
+  "predictions": [
+    {
+      "student_index": 0,
+      "prediction": "Dropout",
+      "probabilities": {"Dropout": 0.5852, "Enrolled": 0.1993, "Graduate": 0.2155},
+      "risk_level": "Medio"
+    },
+    ...
+  ]
+}
 ```
 
 ---
@@ -172,54 +266,100 @@ curl "http://16.170.110.117/predict?age=20&tuition=1&debtor=0&..."
 ## 🚀 Ejecución en local
 
 ```bash
+# Clonar el repositorio
 git clone https://github.com/mcdatax/edurisk-api.git
 cd edurisk-api
+
+# Crear entorno virtual e instalar dependencias
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-# Añadir model/final_model.pkl (desde edurisk)
+
+# Copiar el modelo desde el proyecto EduRisk
+cp ../edurisk/models/final_model.pkl model/
+
+# Configurar variables de entorno
+cp .env.example .env
+
+# Arrancar la API en modo desarrollo
 python run.py
 ```
 
-API en `http://localhost:5000`
+API disponible en `http://localhost:5000`
 
 ---
 
 ## 🐳 Despliegue con Docker
 
-### Imágenes en DockerHub
+### Imágenes públicas en DockerHub
 
 ```bash
 docker pull mcdataxdev/edurisk-api:latest
 docker pull mcdataxdev/edurisk-nginx:latest
 ```
 
-### Levantar en producción
+### Levantar en producción (recomendado — docker-compose)
+
+```bash
+# 1. Crear carpeta y entrar
+mkdir ~/edurisk && cd ~/edurisk
+
+# 2. Crear docker-compose.yml y .env (ver DEPLOY.md para el contenido completo)
+
+# 3. Levantar
+docker-compose up -d
+
+# 4. Verificar
+docker ps
+curl http://localhost/health
+```
+
+### Levantar manualmente (alternativa)
 
 ```bash
 docker network create edurisk-net
 
-docker run -d --name api --network edurisk-net \
+docker run -d --name api --network edurisk-net --restart=always \
   -e MODEL_PATH=model/final_model.pkl \
   -e FLASK_ENV=production \
-  -e PORT=5000 \
   mcdataxdev/edurisk-api:latest
 
-docker run -d --name nginx --network edurisk-net \
+docker run -d --name nginx --network edurisk-net --restart=always \
   -p 80:80 \
   mcdataxdev/edurisk-nginx:latest
 ```
 
-### Reconstruir y publicar
+### Reconstruir imágenes
 
 ```bash
 # API
 docker buildx build --platform linux/amd64 -t mcdataxdev/edurisk-api:latest --push .
 
-# Nginx
-docker buildx build --platform linux/amd64 \
-  -f Dockerfile.nginx \
-  -t mcdataxdev/edurisk-nginx:latest --push .
+# Nginx (solo si cambiaste nginx.conf)
+docker buildx build --platform linux/amd64 -f Dockerfile.nginx -t mcdataxdev/edurisk-nginx:latest --push .
+```
+
+> 📖 Para el manual completo de despliegue paso a paso, ver [DEPLOY.md](DEPLOY.md)
+
+---
+
+## 🔄 Actualizar la API tras cambios
+
+El flujo siempre es Mac → DockerHub → EC2. Nunca se toca el código directamente en el servidor.
+
+```bash
+# 1. Guardar cambios en GitHub
+git add .
+git commit -m "feat: descripción del cambio"
+git push
+
+# 2. Rebuild y push de la nueva imagen
+docker buildx build --platform linux/amd64 -t mcdataxdev/edurisk-api:latest --push .
+
+# 3. En EC2 — descargar y reiniciar
+cd ~/edurisk
+docker-compose pull
+docker-compose up -d
 ```
 
 ---
@@ -228,52 +368,80 @@ docker buildx build --platform linux/amd64 \
 
 ```
 edurisk-api/
+│
 ├── app/
-│   ├── __init__.py              ← create_app() · carga modelo al startup
+│   ├── __init__.py          ← create_app() — carga modelo al startup, configura logging
 │   ├── routes/
-│   │   ├── health.py            ← GET /health
-│   │   └── predict.py           ← POST /predict · GET /predict · GET /student/<id>
+│   │   ├── health.py        ← GET /health
+│   │   └── predict.py       ← POST /predict · GET /predict · GET /student/<id> · POST /predict/batch
 │   └── schemas/
-│       └── predict.py           ← validación + mapeo de inputs
+│       └── predict.py       ← validación de inputs + mapeo nombres cortos → UCI
+│
 ├── model/
-│   └── final_model.pkl          ← no en git
+│   └── final_model.pkl      ← Pipeline sklearn serializado (no en git)
+│
 ├── nginx/
-│   └── nginx.conf               ← reverse proxy + rate limiting
+│   └── nginx.conf           ← reverse proxy + rate limiting (10 req/min por IP)
+│
 ├── src/
-│   ├── data_processing.py       ← DataProcessor + feature engineering
-│   └── utils.py                 ← constantes + helpers
+│   ├── data_processing.py   ← DataProcessor: feature engineering (4 columnas engineered)
+│   └── utils.py             ← constantes, mapeos, helpers, detect_csv_type
+│
 ├── tests/
 │   └── test_routes.py
-├── Dockerfile                   ← python:3.11-slim + gunicorn
-├── Dockerfile.nginx             ← nginx:alpine + nginx.conf
-├── docker-compose.yml           ← desarrollo local
-├── requirements.txt
-└── run.py
+│
+├── docs/
+│   └── deploy_manual.html   ← manual de despliegue interactivo
+│
+├── .env.example             ← plantilla de variables de entorno
+├── .gitignore
+├── Dockerfile               ← python:3.11-slim + gunicorn
+├── Dockerfile.nginx         ← nginx:alpine + nginx.conf
+├── docker-compose.yml       ← orquestación con healthcheck y límites de RAM
+├── DEPLOY.md                ← manual completo de despliegue paso a paso
+├── requirements.txt         ← dependencias directas con versiones pinadas
+└── run.py                   ← entrypoint de la aplicación
 ```
 
 ---
 
 ## 🧱 Stack técnico
 
-| Capa | Tecnología |
-|---|---|
-| Framework | Flask 3.1 |
-| WSGI | Gunicorn 25.3 · 2 workers |
-| Proxy | Nginx alpine · rate limit 10r/m |
-| ML | scikit-learn 1.8 · RandomForest |
-| Contenedores | Docker 29.1 |
-| Registro | DockerHub mcdataxdev |
-| Cloud | AWS EC2 t3.medium · Ubuntu 24.04 |
+| Capa | Tecnología | Por qué |
+|---|---|---|
+| Framework | Flask 3.1 | Estándar en proyectos ML de producción |
+| WSGI | Gunicorn 25.3 · 2 workers | Servidor de producción — reemplaza el dev server de Flask |
+| Reverse proxy | Nginx alpine | Rate limiting, única IP pública, separa responsabilidades |
+| ML | scikit-learn 1.8 · RandomForest | Mejor rendimiento en validación sobre datos de matrícula |
+| Serialización | pickle (sklearn pipeline) | Preserva el ColumnTransformer y sus parámetros aprendidos |
+| Contenedores | Docker 29.1 | Reproducible en cualquier servidor — zero dependency hell |
+| Orquestación | docker-compose + systemd | Healthcheck, límites RAM, arranque automático tras reboot |
+| Registro | DockerHub mcdataxdev | Imágenes públicas, despliegue sin clonar el repo |
+| Cloud | AWS EC2 t3.medium · Ubuntu 24.04 | 2 vCPU + 4 GB RAM — suficiente para API + Nginx |
 
 ---
 
 ## 📄 Variables de entorno
 
-| Variable | Default |
-|---|---|
-| `MODEL_PATH` | `model/final_model.pkl` |
-| `FLASK_ENV` | `production` |
-| `PORT` | `5000` |
+Copia `.env.example` a `.env` y ajusta los valores:
+
+| Variable | Default | Descripción |
+|---|---|---|
+| `MODEL_PATH` | `model/final_model.pkl` | Ruta al pipeline sklearn serializado |
+| `FLASK_ENV` | `production` | Modo de Flask (`development` activa debug) |
+| `PORT` | `5000` | Puerto interno de Gunicorn |
+
+---
+
+## 🔍 Decisiones técnicas destacadas
+
+**Separación entrenamiento / producción:** el modelo se entrena en [EduRisk](https://github.com/mcdatax/edurisk) y se serializa. Esta API solo predice — nunca entrena.
+
+**DataProcessor externo:** el pipeline sklearn incluye ColumnTransformer + RandomForest, pero el feature engineering (DataProcessor) se llama externamente antes de cada predicción. Una mejora futura sería envolver ese paso en un `FunctionTransformer` dentro del pipeline para hacerlo completamente autosuficiente.
+
+**Batch vectorizado:** `predict_proba()` recibe el DataFrame completo en una sola llamada. numpy procesa todas las filas en C compilado — 8.000 predicciones en ~1.45 segundos. Un bucle fila a fila sería ~100x más lento.
+
+**Rate limiting en Nginx:** 10 peticiones/minuto por IP con burst de 20. Protege el modelo de abuso sin necesidad de autenticación para un servicio de demo.
 
 ---
 
@@ -284,4 +452,5 @@ edurisk-api/
 
 ---
 
-*Bootcamp Data Science · The Bridge · 2026 · Dataset UCI #697*
+*Bootcamp Data Science · The Bridge · Madrid 2026*  
+*Modelo base: UCI ML Repository #697 — Realinho et al. (2022)*
