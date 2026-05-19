@@ -25,7 +25,7 @@ services:
     ports:
       - "80:80"
     restart: unless-stopped
-    # Arranca solo cuando la API responde healthcheck OK → evita 502 de bienvenida.
+    # Arranca solo cuando la API responde healthcheck esté OK y evita 502 de bienvenida.
     depends_on:
       api:
         condition: service_healthy

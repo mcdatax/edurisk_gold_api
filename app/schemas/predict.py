@@ -1,4 +1,4 @@
-# Mapeo nombres cortos (API) → nombres reales del dataset UCI
+# Mapeo a nombres cortos para la  API, nombres originales del dataset UCI
 FIELD_MAP = {
     "marital":          "Marital Status",
     "app_mode":         "Application mode",
@@ -29,9 +29,9 @@ FIELD_MAP = {
 REQUIRED_FIELDS = list(FIELD_MAP.keys())
 
 
-def validate_and_map(data: dict) -> tuple[dict, list]:
+def validate_and_map(data: dict):
     """
-    Valida campos requeridos y mapea nombres cortos a nombres UCI.
+    Valida los campos requeridos y mapea nombres cortos a nombres UCI.
     Retorna (datos_mapeados, lista_de_errores).
     """
     errors = []

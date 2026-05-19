@@ -20,7 +20,7 @@ def create_app():
     try:
         with open(model_path, "rb") as f:
             app.config["MODEL"] = pickle.load(f)
-        logger.info(f"Modelo cargado desde {model_path}")
+        logger.info(f"Modelo cargado correctamente desde {model_path}")
     except Exception as e:
         logger.error(f"Error cargando modelo: {e}")
         raise

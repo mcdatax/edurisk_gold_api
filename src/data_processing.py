@@ -18,7 +18,7 @@ class DataProcessor:
     def process(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Pipeline completo. Entrada: DataFrame raw.
-        Salida: DataFrame con 28 features listo para el modelo.
+        Salida: DataFrame con 28 columnas listo para el modelo.
         """
         df = df.copy()
         df = self._drop_grupo_b(df)

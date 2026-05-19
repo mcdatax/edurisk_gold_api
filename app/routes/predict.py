@@ -1,6 +1,12 @@
+# 1. Librería estándar Python
 import logging
+import random
+
+# 2. Librerías de terceros
 import pandas as pd
 from flask import Blueprint, jsonify, request, current_app
+
+# 3. Módulos propios del proyecto
 from app.schemas.predict import validate_and_map, FIELD_MAP
 from src.data_processing import DataProcessor
 from src.utils import decode_target, get_risk_level, generate_random_student
@@ -10,13 +16,14 @@ predict_bp = Blueprint("predict", __name__)
 processor = DataProcessor()
 
 
-def _run_prediction(raw_data: dict) -> dict:
-    """Lógica central reutilizable por todas las rutas."""
+def _run_prediction(raw_data: dict):
+    """Lógica central reutilizable por todas las opciones."""
     model = current_app.config["MODEL"]
     df = pd.DataFrame([raw_data])
     df_processed = processor.process(df)
     proba = model.predict_proba(df_processed)[0]
-    prediction = int(model.predict(df_processed)[0])
+    prediction = int(proba.argmax())
+
     return {
         "prediction": decode_target(prediction),
         "probabilities": {
@@ -28,7 +35,7 @@ def _run_prediction(raw_data: dict) -> dict:
     }
 
 
-# ── POST /predict  (body JSON con nombres cortos) ─────────────────────────
+# POST /predict  (body JSON con nombres cortos)
 @predict_bp.post("/predict")
 def predict_post():
     data = request.get_json(silent=True)
@@ -41,14 +48,14 @@ def predict_post():
 
     try:
         result = _run_prediction(mapped)
-        logger.info(f"POST /predict → {result['prediction']} (risk: {result['risk_level']})")
+        logger.info(f"POST /predict ... {result['prediction']} (risk: {result['risk_level']})")
         return jsonify(result)
     except Exception as e:
         logger.error(f"Error en predicción: {e}")
         return jsonify({"error": "Error interno del servidor"}), 500
 
 
-# ── GET /predict  (query params) ──────────────────────────────────────────
+# GET /predict  (query params)
 @predict_bp.get("/predict")
 def predict_get():
     try:
@@ -63,21 +70,38 @@ def predict_get():
 
     try:
         result = _run_prediction(mapped)
-        logger.info(f"GET /predict → {result['prediction']}")
+        logger.info(f"GET /predict ... {result['prediction']}")
         return jsonify(result)
     except Exception as e:
         logger.error(f"Error en predicción: {e}")
         return jsonify({"error": "Error interno del servidor"}), 500
 
+# POST /predict/batch
+@predict_bp.post("/predict/batch")
+def predict_batch():
+    file = request.files.get("file")
+    if not file:
+        return jsonify({"error": "CSV requerido"}), 400
+    
+    df = pd.read_csv(file)
+    results = []
+    for _, row in df.iterrows():
+        mapped, errors = validate_and_map(row.to_dict())
+        if errors:
+            results.append({"error": errors})
+            continue
+        results.append(_run_prediction(mapped))
+    
+    return jsonify(results)
 
-# ── GET /student/<student_id>  (path param — devuelve estudiante random) ──
+# GET /student/<student_id>  (devuelve estudiante random)
 @predict_bp.get("/student/<int:student_id>")
 def get_student(student_id: int):
     """
     Simula consulta de estudiante por ID.
     En producción real: consultaría una DB.
     """
-    import random
+
     random.seed(student_id)
     student = generate_random_student()
     student["student_id"] = student_id

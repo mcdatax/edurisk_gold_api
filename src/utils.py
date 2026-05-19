@@ -9,7 +9,7 @@ from typing import Tuple, List
 
 
 
-# Columnas post-matrícula — no disponibles en día 0
+# Columnas post-matrícula no disponibles en día 0, esta se eliminan
 COLS_DROP = [
     'Curricular units 1st sem (credited)',
     'Curricular units 1st sem (enrolled)',
@@ -25,16 +25,17 @@ COLS_DROP = [
     'Curricular units 2nd sem (without evaluations)',
 ]
 
+# CONSTANTES
 TARGET_COL    = 'Target'
 TARGET_MAP    = {'Dropout': 0, 'Enrolled': 1, 'Graduate': 2}
 TARGET_LABELS = {0: 'Dropout', 1: 'Enrolled', 2: 'Graduate'}
 RISK_LABELS   = {0: 'Bajo', 1: 'Medio', 2: 'Alto'}
 
-def decode_target(value: int) -> str:
+def decode_target(value: int):
     """Convierte target numérico a etiqueta legible."""
     return TARGET_LABELS.get(value, 'Desconocido')
 
-def get_risk_level(proba_dropout: float) -> str:
+def get_risk_level(proba_dropout: float):
     """Clasifica el nivel de riesgo según P(Dropout)."""
     if proba_dropout >= 0.60:
         return 'Alto'
@@ -44,7 +45,7 @@ def get_risk_level(proba_dropout: float) -> str:
 
 COURSES = [33,171,8014,9003,9070,9085,9119,9130,9147,9238,9254,9500,9556,9670,9773,9853,9991]
 
-def generate_random_student() -> dict:
+def generate_random_student():
     """
     Genera un estudiante aleatorio con valores plausibles
     basados en los rangos reales del dataset UCI #697.
@@ -95,7 +96,7 @@ ENGINEERED_COLS = [
     'age_group', 'is_first_choice'
 ]
 
-def detect_csv_type(df: pd.DataFrame) -> Tuple[str, list]:
+def detect_csv_type(df: pd.DataFrame):
 
     """
     Detecta el tipo de CSV recibido.
