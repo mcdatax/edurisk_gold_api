@@ -454,3 +454,134 @@ Copia `.env.example` a `.env` y ajusta los valores:
 
 *Bootcamp Data Science · The Bridge · Madrid 2026*  
 *Modelo base: UCI ML Repository #697 — Realinho et al. (2022)*
+
+---
+
+## ⚡ Despliegue automático con User Data
+
+La forma más rápida de desplegar — sin conectarte por SSH. Al crear la instancia EC2, pega el script en **Advanced Details → User Data** y en ~4 minutos la API estará disponible.
+
+> **Qué es User Data:** AWS ejecuta este script como root una sola vez al arrancar la instancia por primera vez. Instala Docker, descarga las imágenes y configura el arranque automático — todo sin intervención manual. Es el primer paso hacia Infrastructure as Code.
+
+### Cómo usarlo
+
+**1.** En AWS Console → EC2 → Launch instance, configura la instancia normalmente (Ubuntu 24.04, t3.medium, puertos 22 y 80).
+
+**2.** Antes de lanzar, despliega **Advanced Details** al final de la página y pega el script en el campo **User data**.
+
+**3.** Lanza la instancia. Espera 3-4 minutos y prueba:
+
+```bash
+curl http://<IP_PUBLICA>/health
+```
+
+**4.** Si algo falla, conéctate por SSH y revisa el log:
+
+```bash
+cat /var/log/edurisk-setup.log
+```
+
+### Script
+
+```bash
+#!/bin/bash
+# EduRisk API, User Data Script ==MCDATAX==
+# Ubuntu 24.04 LTS · Docker + docker-compose + systemd
+# Se ejecuta como root una sola vez al lanzar la instancia
+
+set -e  # Para si cualquier comando falla
+exec > /var/log/edurisk-setup.log 2>&1  # Guarda output para debugging
+
+echo "=== Iniciando setup EduRisk API ==MCDATAX==="
+
+# 1. Actualizar sistema
+apt-get update -y
+apt-get upgrade -y
+
+# 2. Instalar Docker
+apt-get install -y docker.io
+systemctl enable --now docker
+
+# Espera a que Docker esté listo
+until docker info >/dev/null 2>&1; do
+  echo "Esperando Docker..."
+  sleep 2
+done
+
+# Añadir usuario ubuntu al grupo docker
+usermod -aG docker ubuntu
+
+# 3. Instalar docker-compose
+curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
+  -o /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+
+# 4. Crear carpeta del proyecto
+mkdir -p /home/ubuntu/edurisk
+cd /home/ubuntu/edurisk
+
+# 5. Crear docker-compose.yml
+cat > docker-compose.yml << 'EOF'
+services:
+  api:
+    image: mcdataxdev/edurisk-api:latest
+    expose:
+      - "5000"
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:5000/health').status==200 else sys.exit(1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    mem_limit: 1200m
+    mem_reservation: 800m
+
+  nginx:
+    image: mcdataxdev/edurisk-nginx:latest
+    ports:
+      - "80:80"
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 128m
+EOF
+
+# 6. Crear .env
+cat > .env << 'EOF'
+MODEL_PATH=model/final_model.pkl
+FLASK_ENV=production
+PORT=5000
+EOF
+
+# 7. Ajustar permisos
+chown -R ubuntu:ubuntu /home/ubuntu/edurisk
+
+# 8. Crear servicio systemd para arranque automático tras reboot
+cat > /etc/systemd/system/edurisk.service << 'EOF'
+[Unit]
+Description=EduRisk API
+After=docker.service
+Requires=docker.service
+
+[Service]
+WorkingDirectory=/home/ubuntu/edurisk
+ExecStart=/usr/local/bin/docker-compose up
+ExecStop=/usr/local/bin/docker-compose down
+Restart=always
+User=ubuntu
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 9. Habilitar y arrancar el servicio
+systemctl daemon-reload
+systemctl enable edurisk
+systemctl start edurisk
+
+echo "=== Setup completado ==MCDATAX== ==="
+```
