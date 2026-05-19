@@ -8,7 +8,7 @@ services:
       - .env
     # Rearranca solo si el contenedor falla; sobrevive a reboots de EC2.
     restart: unless-stopped
-    # Healthcheck con Python (urllib) en vez de curl — la imagen python:slim no trae curl.
+    # Healthcheck con Python (urllib) en vez de curl, la imagen python:slim no trae curl.
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:5000/health').status==200 else sys.exit(1)"]
       interval: 30s

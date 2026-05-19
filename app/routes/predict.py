@@ -7,9 +7,10 @@ import pandas as pd
 from flask import Blueprint, jsonify, request, current_app
 
 # 3. Módulos propios del proyecto
-from app.schemas.predict import validate_and_map, FIELD_MAP
+from app.schemas.predict import validate_and_map
 from src.data_processing import DataProcessor
-from src.utils import decode_target, get_risk_level, generate_random_student
+from src.utils import decode_target, get_risk_level, generate_random_student, detect_csv_type
+
 
 logger = logging.getLogger(__name__)
 predict_bp = Blueprint("predict", __name__)
@@ -82,17 +83,48 @@ def predict_batch():
     file = request.files.get("file")
     if not file:
         return jsonify({"error": "CSV requerido"}), 400
-    
+
     df = pd.read_csv(file)
-    results = []
-    for _, row in df.iterrows():
-        mapped, errors = validate_and_map(row.to_dict())
-        if errors:
-            results.append({"error": errors})
-            continue
-        results.append(_run_prediction(mapped))
+
     
-    return jsonify(results)
+    csv_type, missing = detect_csv_type(df)
+
+    if csv_type == "invalid":
+        return jsonify({"error": f"Columnas faltantes: {missing}"}), 422
+
+    results = []
+
+    if csv_type == "raw":
+        # CSV con nombres UCI completos, se debe procesar directamente.
+        df_processed = processor.process(df)
+        model = current_app.config["MODEL"]
+        probas = model.predict_proba(df_processed)
+        
+        for i, proba in enumerate(probas):
+            prediction = int(proba.argmax())
+            results.append({
+                "student_index": i,
+                "prediction": decode_target(prediction),
+                "probabilities": {
+                    "Dropout":  round(float(proba[0]), 4),
+                    "Enrolled": round(float(proba[1]), 4),
+                    "Graduate": round(float(proba[2]), 4),
+                },
+                "risk_level": get_risk_level(float(proba[0]))
+            })
+    else:
+        # CSV con nombres cortos
+        for _, row in df.iterrows():
+            mapped, errors = validate_and_map(row.to_dict()) # Si vienen los nombres cortos en las columnas, pasamos a estándar UCI porque el modelo fue entrenado con esos nombres
+            if errors:
+                results.append({"error": errors})
+                continue
+            results.append(_run_prediction(mapped))
+
+    return jsonify({
+        "total": len(results),
+        "predictions": results
+    })
 
 # GET /student/<student_id>  (devuelve estudiante random)
 @predict_bp.get("/student/<int:student_id>")

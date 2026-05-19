@@ -31,7 +31,7 @@ REQUIRED_FIELDS = list(FIELD_MAP.keys())
 
 def validate_and_map(data: dict):
     """
-    Valida los campos requeridos y mapea nombres cortos a nombres UCI.
+    Valida los campos requeridos y mapea nombres cortos a nombres UCI, es decir, en el formato que acepta el modelo.
     Retorna (datos_mapeados, lista_de_errores).
     """
     errors = []

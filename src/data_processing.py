@@ -15,10 +15,10 @@ class DataProcessor:
     y se aplica automáticamente en predict().
     """
 
-    def process(self, df: pd.DataFrame) -> pd.DataFrame:
+    def process(self, df: pd.DataFrame):
         """
         Pipeline completo. Entrada: DataFrame raw.
-        Salida: DataFrame con 28 columnas listo para el modelo.
+        Salida: DataFrame con 28 columnas listo para el modelo (se adicionan las columnas creadas en el Feature Engineering)
         """
         df = df.copy()
         df = self._drop_grupo_b(df)
@@ -26,16 +26,18 @@ class DataProcessor:
         df = self._engineer_features(df)
         return df
 
-    def _drop_grupo_b(self, df: pd.DataFrame) -> pd.DataFrame:
+    # El grupo b son los features obtenidos post-matricula, no nos interesan.
+    def _drop_grupo_b(self, df: pd.DataFrame):
         cols = [c for c in COLS_DROP if c in df.columns]
         return df.drop(columns=cols)
-
-    def _drop_target(self, df: pd.DataFrame) -> pd.DataFrame:
+    
+    # Elimina el target
+    def _drop_target(self, df: pd.DataFrame):
         if TARGET_COL in df.columns:
             return df.drop(columns=[TARGET_COL])
         return df
 
-    def _engineer_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _engineer_features(self, df: pd.DataFrame):
         if "Mother's qualification" in df.columns:
             df['parents_qualification_avg'] = (
                 df["Mother's qualification"] +
@@ -48,7 +50,7 @@ class DataProcessor:
             )
 
         if 'Age at enrollment' in df.columns:
-            df['age_group'] = pd.cut(
+            df['age_group'] = pd.cut( # Convierte una variable continua (edad) en categorías discretas
                 df['Age at enrollment'],
                 bins=[0, 20, 25, 35, 100],
                 labels=[0, 1, 2, 3]
